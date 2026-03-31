@@ -1,5 +1,7 @@
 import { chromium, Browser, Page } from 'playwright';
 import { Job } from './types';
+import { scanEmitter } from './events';
+import path from 'path';
 
 export class JobScraper {
   private baseUrl: string = 'https://www.onlinejobs.ph';
@@ -129,8 +131,21 @@ export class ProfileScraper {
       const page = await this.browser!.newPage();
       try {
         console.log(`[Crawler] Scraping: ${currentUrl} (Depth: ${depth})`);
+        
+        // Use a standard desktop viewport for better screenshots
+        await page.setViewportSize({ width: 1280, height: 800 });
         await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         
+        // Capture screenshot for live feed
+        const screenshotPath = path.join(process.cwd(), 'public', 'scans', 'snapshot.png');
+        await page.screenshot({ path: screenshotPath });
+        
+        // Emit progress with screenshot URL
+        scanEmitter.emit('scanProgress', { 
+          url: currentUrl, 
+          screenshot: `/scans/snapshot.png?t=${Date.now()}` // Cache busting
+        });
+
         // Extract plain text
         const text = await page.innerText('body');
         combinedText += `\n--- SOURCE: ${currentUrl} ---\n${text}\n`;

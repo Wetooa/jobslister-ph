@@ -23,7 +23,7 @@ export class LLMClient {
           stream: false,
           format: "json"
         }, {
-          timeout: 240000 // 4 minutes for heavy local inference
+          timeout: 600000 // 10 minutes for heavy local inference
         });
         return response.data.response;
       } catch (error: any) {
@@ -40,7 +40,7 @@ export class LLMClient {
             const data = typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data);
             errorMsg = `Status ${status}: ${data}`;
           } else if (error.code === 'ECONNABORTED') {
-            errorMsg = 'Inference timed out (4min limit)';
+            errorMsg = 'Inference timed out (10min limit)';
           }
           console.error('Error generating response from LLM:', errorMsg);
           throw new Error(errorMsg);

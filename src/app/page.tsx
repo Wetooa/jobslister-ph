@@ -26,6 +26,8 @@ export default function Home() {
   const [isScanComplete, setIsScanComplete] = useState(false);
   const [portfolioUrl, setPortfolioUrl] = useState('');
   const [isScrapingPortfolio, setIsScrapingPortfolio] = useState(false);
+  const [scanImageUrl, setScanImageUrl] = useState<string | null>(null);
+  const [lastScannedUrl, setLastScannedUrl] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
@@ -141,6 +143,9 @@ export default function Home() {
                 setScanLogs(prev => [...prev, `**Error:** ${data.message}`]);
               } else if (data.event === 'analysisAdded') {
                 fetchData();
+              } else if (data.event === 'scanProgress') {
+                setScanImageUrl(data.screenshot);
+                setLastScannedUrl(data.url);
               } else if (data.event === 'complete') {
                 setIsScanComplete(true);
                 toast.success('Scan completed successfully!');
@@ -258,132 +263,209 @@ export default function Home() {
             </div>
           </TabsContent>
 
-          <TabsContent value="profile" className="animate-in fade-in slide-in-from-bottom-4 duration-500 outline-none">
-            <div className="max-w-5xl mx-auto space-y-8">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column: Metadata & Portfolios */}
-                <div className="space-y-6">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm">Portfolios & Web Presence</CardTitle>
+          <TabsContent value="profile" className="animate-in fade-in slide-in-from-bottom-4 duration-700 outline-none">
+            <div className="max-w-6xl mx-auto space-y-10">
+              
+              {/* Premium Header */}
+              <div className="relative overflow-hidden rounded-3xl bg-slate-900 p-8 md:p-12 text-white shadow-2xl">
+                <div className="absolute top-0 right-0 -m-12 h-64 w-64 rounded-full bg-indigo-500/20 blur-3xl" />
+                <div className="absolute bottom-0 left-0 -m-12 h-64 w-64 rounded-full bg-purple-500/20 blur-3xl" />
+                
+                <div className="relative z-10 flex flex-col md:flex-row gap-8 items-start md:items-center">
+                  <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <UserCircle className="w-14 h-14" />
+                  </div>
+                  <div className="space-y-2 flex-1">
+                    <h2 className="text-4xl md:text-5xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
+                      Professional Profile
+                    </h2>
+                    <p className="text-slate-400 max-w-2xl text-lg leading-relaxed italic">
+                      {profile?.summary || profile?.profile_summary || 'No active profile summary found.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                {/* Left Column: Tools & Control */}
+                <div className="space-y-8">
+                  {/* Portfolio Manager Card */}
+                  <Card className="border-none shadow-xl bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl overflow-hidden">
+                    <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Globe className="w-5 h-5 text-indigo-500" />
+                        Web Presence
+                      </CardTitle>
+                      <CardDescription>Portfolios & Personal Links</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {profile?.portfolios?.map((url, i) => (
-                        <div key={i} className="flex items-center justify-between p-2 rounded bg-slate-50 dark:bg-slate-900 border text-xs">
-                          <span className="truncate max-w-[150px]">{url}</span>
-                          <a href={url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
-                      ))}
+                      <div className="space-y-2">
+                        {profile?.portfolios?.map((url, i) => (
+                          <div key={i} className="group flex items-center justify-between p-3 rounded-xl bg-slate-100 dark:bg-slate-800 border-transparent hover:border-indigo-500/30 border transition-all">
+                            <span className="truncate text-xs font-medium text-slate-600 dark:text-slate-300">{url}</span>
+                            <a href={url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-500 transition-colors">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        ))}
+                      </div>
                       
-                      <div className="space-y-2 pt-2">
-                        <Input 
-                          placeholder="https://portfolio.com" 
-                          value={portfolioUrl} 
-                          onChange={(e) => setPortfolioUrl(e.target.value)}
-                          className="text-xs h-8"
-                        />
+                      <div className="pt-4 space-y-3">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <Input 
+                            placeholder="https://portfolio.me" 
+                            value={portfolioUrl} 
+                            onChange={(e) => setPortfolioUrl(e.target.value)}
+                            className="pl-9 pr-4 py-6 bg-slate-100/50 dark:bg-slate-800/50 border-none rounded-xl focus-visible:ring-2 focus-visible:ring-indigo-500"
+                          />
+                        </div>
                         <Button 
-                          size="sm" 
-                          className="w-full h-8 text-xs gap-2" 
+                          className="w-full py-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white transition-all shadow-lg hover:shadow-indigo-500/20 gap-2 font-bold"
                           onClick={handleDeepScan}
                           disabled={isScrapingPortfolio || !portfolioUrl}
                         >
                           {isScrapingPortfolio ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            <RefreshCw className="w-5 h-5 animate-spin" />
                           ) : (
-                            <Search className="w-3 h-3" />
+                            <Sparkles className="w-5 h-5" />
                           )}
-                          Deep Scan Portfolio
+                          {isScrapingPortfolio ? 'Deep Scanning...' : 'Start Deep Scan'}
                         </Button>
                       </div>
                     </CardContent>
                   </Card>
 
-                  {profile?.skills && (
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-sm">Tech Stack</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {Object.entries(profile.skills).map(([category, items], i) => (
-                          <div key={i} className="space-y-1">
-                            <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">{category}</h4>
-                            <div className="flex flex-wrap gap-1">
-                              {items.map((skill, si) => (
-                                <Badge key={si} variant="outline" className="px-1.5 py-0 text-[10px] font-normal">
-                                  {skill}
-                                </Badge>
-                              ))}
-                            </div>
+                  {/* Tech Stack Visualization */}
+                  <Card className="border-none shadow-xl bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Tech Stack</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {profile?.skills && Object.entries(profile.skills).map(([category, items], i) => (
+                        <div key={i} className="space-y-3">
+                          <h4 className="text-xs uppercase tracking-widest text-slate-400 font-black flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                            {category.replace(/_/g, ' ')}
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {items.map((skill, si) => (
+                              <Badge key={si} variant="secondary" className="px-3 py-1 bg-white dark:bg-slate-800 hover:bg-indigo-500 hover:text-white transition-colors cursor-default border-none shadow-sm">
+                                {skill}
+                              </Badge>
+                            ))}
                           </div>
-                        ))}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Right Column: Live Feed & Projects */}
+                <div className="lg:col-span-2 space-y-8">
+                  
+                  {/* LIVE CRAWL FEED */}
+                  {isScrapingPortfolio && (
+                    <Card className="border-2 border-indigo-500/20 shadow-2xl bg-slate-950 overflow-hidden animate-in zoom-in-95 duration-500">
+                      <CardHeader className="bg-slate-900/50 border-b border-white/5 flex flex-row items-center justify-between py-3">
+                        <div className="flex items-center gap-3">
+                           <div className="flex gap-1.5">
+                              <div className="h-3 w-3 rounded-full bg-red-500" />
+                              <div className="h-3 w-3 rounded-full bg-yellow-500" />
+                              <div className="h-3 w-3 rounded-full bg-green-500" />
+                           </div>
+                           <CardTitle className="text-xs font-mono text-slate-400 ml-4">
+                              {lastScannedUrl || 'Starting crawler...'}
+                           </CardTitle>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] uppercase tracking-tighter text-indigo-400 border-indigo-400/30 animate-pulse">
+                          Live Crawl Feed
+                        </Badge>
+                      </CardHeader>
+                      <CardContent className="p-0 relative bg-slate-900 aspect-video flex items-center justify-center">
+                        {scanImageUrl ? (
+                          <img 
+                            src={scanImageUrl} 
+                            alt="Crawl Screenshot" 
+                            className="w-full h-full object-cover object-top opacity-80"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-4 text-slate-500">
+                            <RefreshCw className="w-10 h-10 animate-spin opacity-20" />
+                            <p className="text-sm font-mono">Initializing browser instance...</p>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-60" />
                       </CardContent>
                     </Card>
                   )}
-                </div>
 
-                {/* Right Column: Experience and Projects */}
-                <div className="lg:col-span-2 space-y-6">
-                  <Card className="border-none shadow-none bg-transparent">
-                    <CardHeader className="px-0 pt-0">
-                      <CardTitle className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-primary to-indigo-600">
-                        Professional Profile
-                      </CardTitle>
-                      <CardDescription className="text-base leading-relaxed">
-                        {profile?.summary || profile?.profile_summary}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="px-0 space-y-8">
-                                            
-                      <section className="space-y-4">
-                        <h3 className="text-xl font-bold flex items-center gap-2">
-                          <Briefcase className="w-5 h-5 text-primary" />
-                          Experience & Projects
-                        </h3>
-                        <div className="space-y-4">
-                          {profile?.projects?.map((proj, i) => (
-                            <div key={i} className="p-5 rounded-xl border bg-white dark:bg-slate-950 shadow-sm hover:shadow-md transition-shadow space-y-3">
-                              <div className="flex justify-between items-start">
-                                <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100">{proj.name}</h4>
-                                {proj.url && (
-                                  <a href={proj.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                                    <ExternalLink className="w-4 h-4" />
-                                  </a>
-                                )}
-                              </div>
-                              <p className="text-sm text-slate-500 dark:text-slate-400">
-                                {proj.description}
-                              </p>
-                              {proj.technologies && (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {proj.technologies.map((t, ti) => (
-                                    <Badge key={ti} variant="secondary" className="text-[10px] px-2 py-0">
+                  {/* Projects Experience */}
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-3">
+                       <Briefcase className="w-8 h-8 text-indigo-500" />
+                       <h3 className="text-3xl font-black">Experience & Projects</h3>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-6">
+                      {profile?.projects?.map((proj, i) => (
+                        <Card key={i} className="group border-none shadow-xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+                          <CardContent className="p-8 space-y-5">
+                            <div className="flex justify-between items-start">
+                              <div className="space-y-1">
+                                <h4 className="text-2xl font-black group-hover:text-indigo-600 transition-colors uppercase tracking-tight">
+                                  {proj.name}
+                                </h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {proj.technologies?.map((t, ti) => (
+                                    <Badge key={ti} variant="outline" className="text-[10px] border-slate-200 dark:border-slate-800 text-slate-400 uppercase tracking-tighter font-black">
                                       {t}
                                     </Badge>
                                   ))}
                                 </div>
-                              )}
-                              {proj.achievements && (
-                                <ul className="list-disc list-inside text-xs space-y-1 text-slate-600 dark:text-slate-400 pl-2">
-                                  {proj.achievements.map((a, ai) => (
-                                    <li key={ai}>{a}</li>
-                                  ))}
-                                </ul>
+                              </div>
+                              {proj.url && (
+                                <a href={proj.url} target="_blank" rel="noreferrer" className="p-3 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-indigo-500 hover:text-white transition-all shadow-sm">
+                                  <ExternalLink className="w-5 h-5" />
+                                </a>
                               )}
                             </div>
-                          ))}
-                        </div>
-                      </section>
+                            
+                            <p className="text-slate-600 dark:text-slate-400 leading-relaxed text-lg font-medium italic border-l-4 border-indigo-500 pl-4 py-1">
+                              {proj.description}
+                            </p>
 
-                      {profile && (
-                         <Button variant="outline" onClick={() => { if(confirm('Are you sure you want to reset your profile?')) setProfile(null); }} className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/20 opacity-50 hover:opacity-100 transition-opacity">
-                            Reset Profile & Re-upload CV
-                         </Button>
-                      )}
-                    </CardContent>
-                  </Card>
+                            {proj.achievements && (
+                              <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl p-6 space-y-3">
+                                <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Key Achievements</h5>
+                                <ul className="space-y-3">
+                                  {proj.achievements.map((a, ai) => (
+                                    <li key={ai} className="text-sm flex gap-3 text-slate-600 dark:text-slate-400 font-medium">
+                                      <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" />
+                                      {a}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                    
+                    {profile && (
+                      <div className="pt-10 flex justify-center">
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => { if(confirm('Are you sure you want to reset your profile?')) setProfile(null); }} 
+                          className="text-slate-400 hover:text-red-500 hover:bg-red-500/5 transition-all text-xs uppercase tracking-widest font-black"
+                        >
+                          Reset Profile & Re-upload CV
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

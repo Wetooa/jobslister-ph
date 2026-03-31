@@ -20,6 +20,10 @@ export async function GET(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'analysisAdded' })}\n\n`));
       };
 
+      const scanProgressHandler = (data: { url: string; screenshot: string }) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'scanProgress', ...data })}\n\n`));
+      };
+
       const completeHandler = () => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'complete' })}\n\n`));
       };
@@ -29,6 +33,7 @@ export async function GET(req: NextRequest) {
         scanEmitter.off('log', logHandler);
         scanEmitter.off('error', errorHandler);
         scanEmitter.off('analysisAdded', analysisAddedHandler);
+        scanEmitter.off('scanProgress', scanProgressHandler);
         scanEmitter.off('complete', completeHandler);
       });
 
@@ -36,6 +41,7 @@ export async function GET(req: NextRequest) {
       scanEmitter.on('log', logHandler);
       scanEmitter.on('error', errorHandler);
       scanEmitter.on('analysisAdded', analysisAddedHandler);
+      scanEmitter.on('scanProgress', scanProgressHandler);
       scanEmitter.on('complete', completeHandler);
 
       // Welcome message

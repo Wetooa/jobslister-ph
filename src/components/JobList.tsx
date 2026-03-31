@@ -65,6 +65,7 @@ export function JobList({ jobs, analysis }: JobListProps) {
       if (showFullTime || showPartTime || showGig) {
         const titleAndType = (job.typeOfWork || '').toLowerCase();
         typeMatch =
+          titleAndType.includes('any') ||
           (showFullTime && titleAndType.includes('full time')) ||
           (showPartTime && titleAndType.includes('part time')) ||
           (showGig && titleAndType.includes('gig'));
