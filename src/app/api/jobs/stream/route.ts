@@ -16,6 +16,10 @@ export async function GET(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'error', message })}\n\n`));
       };
 
+      const analysisAddedHandler = () => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'analysisAdded' })}\n\n`));
+      };
+
       const completeHandler = () => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'complete' })}\n\n`));
       };
@@ -24,12 +28,14 @@ export async function GET(req: NextRequest) {
       req.signal.addEventListener('abort', () => {
         scanEmitter.off('log', logHandler);
         scanEmitter.off('error', errorHandler);
+        scanEmitter.off('analysisAdded', analysisAddedHandler);
         scanEmitter.off('complete', completeHandler);
       });
 
       // Attach listeners
       scanEmitter.on('log', logHandler);
       scanEmitter.on('error', errorHandler);
+      scanEmitter.on('analysisAdded', analysisAddedHandler);
       scanEmitter.on('complete', completeHandler);
 
       // Welcome message

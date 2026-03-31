@@ -19,12 +19,11 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
   const sendLog = (msg: string) => scanEmitter.emit('log', msg);
   const sendError = (msg: string) => scanEmitter.emit('error', msg);
 
+  const scraper = new JobScraper();
   try {
     sendLog(`**Initialization complete.** Starting background scanner for queries: [${queries.join(', ')}]`);
-
-    const scraper = new JobScraper();
     const llm = new LLMClient();
-    
+
     let jobCache = Storage.getJobs();
     let analysisCache = Storage.getAnalysis();
 
@@ -33,11 +32,11 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
       sendLog(`[Search] Querying OnlineJobs.ph for keyword: **"${query}"**`);
       const searchResults = await scraper.searchJobs(query);
       sendLog(`[Search] Found ${searchResults.length} initial matching results for **"${query}"**`);
-      
+
       for (let i = 0; i < searchResults.length; i++) {
         const res = searchResults[i];
         const existingJob = jobCache.find(j => j.link === res.link);
-        
+
         let shouldSave = false;
 
         if (existingJob) {
@@ -48,21 +47,25 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
           }
         }
 
-        if (!existingJob || !existingJob.description) {
+        if (!existingJob || (!existingJob.description && !existingJob.scrapeError)) {
           sendLog(`[Scraping] Fetching full details dynamically for: ${res.title}...`);
-          const details = await scraper.getJobDetails(res.link);
-          if (details) {
-            if (existingJob) {
-              Object.assign(existingJob, details);
-              if (!existingJob.tags) existingJob.tags = [];
-              if (!existingJob.tags.includes(query)) existingJob.tags.push(query);
-            } else {
-              jobCache.push({ ...res, ...details, tags: [query] } as Job);
+          try {
+            const details = await scraper.getJobDetails(res.link);
+            if (details) {
+              if (existingJob) {
+                Object.assign(existingJob, details);
+              } else {
+                jobCache.push({ ...res, ...details, tags: [query] } as Job);
+              }
+              shouldSave = true;
+              sendLog(`[Scraping] Successfully cached description for: **${res.title}**`);
             }
+          } catch (e: any) {
+            sendLog(`[Scraping] Failed to retrieve details for: ${res.title}`);
+            const job = existingJob || { ...res, tags: [query] };
+            (job as Job).scrapeError = e.message || 'Scrape failed';
+            if (!existingJob) jobCache.push(job as Job);
             shouldSave = true;
-            sendLog(`[Scraping] Successfully cached description for: **${res.title}**`);
-          } else {
-            sendLog(`[Scraping] Failed or timed out retrieving description for: ${res.title}`);
           }
         }
 
@@ -74,7 +77,7 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
     sendLog(`[System] Scraping pipeline complete. Preparing LLM analysis queue...`);
     const unanalyzedJobs = jobCache.filter(j => j.description && !analysisCache[j.link] && !j.isClosed);
     sendLog(`[Heuristics] Processing ${unanalyzedJobs.length} unanalyzed jobs through pre-screening.`);
-    
+
     const getPreScore = (job: Job, prof: Profile) => {
       let score = 0;
       const text = `${job.title} ${job.description} ${job.skills}`.toLowerCase();
@@ -85,7 +88,7 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
     };
 
     unanalyzedJobs.sort((a, b) => getPreScore(b, profile) - getPreScore(a, profile));
-    const BATCH_LIMIT = 20;
+    const BATCH_LIMIT = 500;
     const jobsToAnalyze = unanalyzedJobs.slice(0, BATCH_LIMIT);
 
     if (jobsToAnalyze.length > 0) {
@@ -98,27 +101,43 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
     const CONCURRENCY = 3;
     for (let i = 0; i < jobsToAnalyze.length; i += CONCURRENCY) {
       const batch = jobsToAnalyze.slice(i, i + CONCURRENCY);
-      sendLog(`[AI Agent] Processing batch ${Math.floor(i/CONCURRENCY) + 1} (${batch.length} jobs concurrently)...`);
+      sendLog(`[AI Agent] Processing batch ${Math.floor(i / CONCURRENCY) + 1} (${batch.length} jobs concurrently)...`);
 
       await Promise.all(batch.map(async (job) => {
         sendLog(`[AI Agent] Analyzing: **${job.title}**`);
         const context = `Job Title: ${job.title}\nType: ${job.typeOfWork}\nSalary: ${job.salary}\nSkills: ${job.skills}\nDescription: ${job.description}`;
         const comparison = await llm.compareJob(profile, context);
-        
-        if ('matchScore' in comparison) {
+
+        if ('matchScore' in comparison || 'match_score' in comparison) {
+          const score = (comparison as any).matchScore ?? (comparison as any).match_score ?? 0;
           const normalized: Analysis = {
-            matchScore: (comparison as any).matchScore || 0,
+            matchScore: score,
             pros: Array.isArray((comparison as any).pros) ? (comparison as any).pros : [],
             cons: Array.isArray((comparison as any).cons) ? (comparison as any).cons : [],
             recommendation: (comparison as any).recommendation || 'Skip',
-            reasoning: (comparison as any).reasoning || 'No reasoning provided.'
+            reasoning: (comparison as any).reasoning || (comparison as any).reason || 'No reasoning provided.'
           };
           analysisCache[job.link] = normalized;
-          Storage.saveAnalysis(analysisCache);
           sendLog(`[AI Agent] Rated **${job.title}**: ${normalized.matchScore}% Match`);
         } else {
-          sendLog(`[AI Agent] Analysis failed for: ${job.title}`);
+          let errorMsg = (comparison as any).error;
+          if (!errorMsg) {
+            const keys = Object.keys(comparison).join(', ');
+            errorMsg = `Schema mismatch: Expected "matchScore" but found keys [${keys || 'none'}]`;
+          }
+          analysisCache[job.link] = {
+            matchScore: -1,
+            pros: [],
+            cons: [],
+            recommendation: 'Skip',
+            reasoning: `Analysis failed: ${errorMsg}`
+          };
+          sendLog(`[AI Agent] Analysis failed for **${job.title}**: ${errorMsg}`);
         }
+
+        // Save after EACH job completes to ensure no progress is lost
+        Storage.saveAnalysis(analysisCache);
+        scanEmitter.emit('analysisAdded');
       }));
 
       // Polite delay between batches instead of jobs
@@ -133,6 +152,8 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
   } catch (error: any) {
     console.error('Job processing error:', error);
     sendError(error.message || 'Internal Server Error');
+  } finally {
+    await scraper.close();
   }
 }
 

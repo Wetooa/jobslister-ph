@@ -20,8 +20,25 @@ export function JobSearch({ onSearchStarted, isLoading, profile }: JobSearchProp
   
   const [queries, setQueries] = useState<string[]>(() => {
     if (profile && profile.skills) {
+      const processedSkills: string[] = [];
       const allSkills = Object.values(profile.skills).flat();
-      const topSkills = Array.from(new Set(allSkills)).slice(0, 5);
+      
+      allSkills.forEach(skill => {
+        // Split composite skills like "JavaScript/TypeScript"
+        if (skill.includes('/')) {
+          skill.split('/').forEach(s => processedSkills.push(s.trim()));
+        } else {
+          processedSkills.push(skill);
+        }
+        
+        // Add common variations
+        if (skill.toLowerCase() === 'next.js') {
+          processedSkills.push('Nextjs');
+        }
+      });
+
+      const uniqueSkills = Array.from(new Set(processedSkills));
+      const topSkills = uniqueSkills.slice(0, 15);
       if (topSkills.length > 0) return topSkills;
     }
     return ['Software Engineer', 'AI', 'Node.js', 'Python'];

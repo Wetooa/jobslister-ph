@@ -28,7 +28,7 @@ export function JobList({ jobs, analysis }: JobListProps) {
   const [selectedJob, setSelectedJob] = useState<JobWithMatch | null>(null);
 
   const [localJobs, setLocalJobs] = useState<Job[]>(jobs);
-  
+
   const allTags = Array.from(new Set(localJobs.flatMap(j => j.tags || []))).filter(Boolean).sort();
 
   useEffect(() => {
@@ -190,8 +190,8 @@ export function JobList({ jobs, analysis }: JobListProps) {
             <CardHeader className="pb-2">
               <div className="flex justify-between items-start">
                 <div className="flex flex-col items-start gap-1 mb-2">
-                  <Badge variant={job.match?.matchScore && job.match.matchScore >= 70 ? 'default' : 'secondary'}>
-                    {job.match ? `${job.match.matchScore ?? 0}% Match` : 'Not Analyzed'}
+                  <Badge variant={job.match?.matchScore && job.match.matchScore >= 70 ? 'default' : (job.match?.matchScore === -1 || job.scrapeError ? 'destructive' : 'secondary')}>
+                    {job.scrapeError ? `Scrape Failed: ${job.scrapeError}` : (job.match ? (job.match.matchScore === -1 ? 'Analysis Failed' : `${job.match.matchScore ?? 0}% Match`) : 'Not Analyzed')}
                   </Badge>
                   {job.hasApplied && <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200 text-[10px] uppercase">Applied</Badge>}
                   {job.tags && job.tags.length > 0 && (
@@ -268,8 +268,8 @@ export function JobList({ jobs, analysis }: JobListProps) {
 
             <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
               <div className="flex items-center gap-3 flex-wrap">
-                <Badge variant={selectedJob.match?.matchScore && selectedJob.match.matchScore >= 70 ? 'default' : 'secondary'} className="text-sm px-3 py-1">
-                  {selectedJob.match ? `${selectedJob.match.matchScore ?? 0}% Match` : 'Not Analyzed'}
+                <Badge variant={selectedJob.match?.matchScore && selectedJob.match.matchScore >= 70 ? 'default' : (selectedJob.match?.matchScore === -1 ? 'destructive' : 'secondary')} className="text-sm px-3 py-1">
+                  {selectedJob.match ? (selectedJob.match.matchScore === -1 ? 'Analysis Failed' : `${selectedJob.match.matchScore ?? 0}% Match`) : 'Not Analyzed'}
                 </Badge>
                 {selectedJob.hasApplied && <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200">Applied</Badge>}
                 {selectedJob.tags && selectedJob.tags.map(t => (
@@ -373,7 +373,8 @@ export function JobList({ jobs, analysis }: JobListProps) {
 }
 
 function getScoreColor(score?: number) {
-  if (!score) return '#cbd5e1'; // slate-300
+  if (!score || score === 0) return '#cbd5e1'; // slate-300
+  if (score === -1) return '#ef4444'; // red-500
   if (score >= 70) return '#22c55e'; // green-500
   if (score >= 40) return '#f59e0b'; // amber-500
   return '#ef4444'; // red-500

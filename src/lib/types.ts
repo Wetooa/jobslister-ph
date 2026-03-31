@@ -5,11 +5,21 @@ export interface Profile {
   projects: {
     name: string;
     description: string;
+    technologies?: string[];
+    url?: string;
+    achievements?: string[];
   }[];
   experience?: string[];
   experience_highlights?: string[];
   summary?: string;
   profile_summary?: string;
+  portfolios?: string[];
+  socialLinks?: {
+    github?: string;
+    linkedin?: string;
+    twitter?: string;
+    other?: string[];
+  };
 }
 
 export interface Job {
@@ -25,6 +35,7 @@ export interface Job {
   isClosed?: boolean;
   isBlacklisted?: boolean;
   tags?: string[];
+  scrapeError?: string;
 }
 
 export interface Analysis {

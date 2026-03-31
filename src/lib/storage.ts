@@ -3,7 +3,7 @@ import path from 'path';
 import { Job, Profile, Analysis } from './types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
-const PROFILE_PATH = path.join(process.cwd(), 'profile.json');
+const PROFILE_PATH = path.join(DATA_DIR, 'profile.json');
 const MANIFEST_PATH = path.join(process.cwd(), 'manifest.json');
 const JOBS_PATH = path.join(DATA_DIR, 'jobs.json');
 const ANALYSIS_PATH = path.join(DATA_DIR, 'analysis.json');
@@ -30,5 +30,8 @@ export const Storage = {
   },
   saveAnalysis: (analysis: Record<string, Analysis>) => {
     fs.writeFileSync(ANALYSIS_PATH, JSON.stringify(analysis, null, 2));
+  },
+  saveProfile: (profile: Profile) => {
+    fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2));
   }
 };
