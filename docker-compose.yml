@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    volumes:
+      - ./data:/app/data
+    # Lets the container reach Ollama on the host via http://host.docker.internal:11434 (Linux Docker 20.10+)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

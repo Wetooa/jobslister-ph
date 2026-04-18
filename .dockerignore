@@ -1,0 +1,29 @@
+# dependencies & build output
+node_modules
+.next
+out
+
+# git & tooling
+.git
+.gitignore
+.cursor
+
+# env & local secrets (never bake into images)
+.env
+.env.*
+!.env.example
+
+# runtime data (mounted as a volume)
+data
+
+# tests & coverage (not needed for production build)
+coverage
+**/*.test.ts
+**/*.test.tsx
+vitest.config.ts
+src/test
+
+# docs & misc
+*.md
+docker-compose*.yml
+.editorconfig
