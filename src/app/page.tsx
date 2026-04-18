@@ -9,7 +9,8 @@ import { Job, Analysis, Profile } from '@/lib/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { Briefcase, UserCircle, Sparkles, LayoutDashboard, RefreshCw, Globe, Search, ExternalLink } from 'lucide-react';
+import { Briefcase, UserCircle, Sparkles, LayoutDashboard, RefreshCw, Globe, Search, ExternalLink, LogOut } from 'lucide-react';
+import { ADMIN_AUTH_STORAGE_KEY } from '@/lib/auth-storage';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,13 @@ export default function Home() {
   const [lastScannedUrl, setLastScannedUrl] = useState<string | null>(null);
   const [closedSyncLogs, setClosedSyncLogs] = useState<string[]>([]);
   const [isSyncingClosed, setIsSyncingClosed] = useState(false);
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+      window.location.reload();
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -201,22 +209,46 @@ export default function Home() {
             <h1 className="text-xl font-bold tracking-tight">JobsPH <span className="text-primary font-black">AI</span></h1>
           </div>
           
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="hidden md:flex">
-            <TabsList className="bg-slate-100 dark:bg-slate-800">
-              <TabsTrigger value="dashboard" className="gap-2">
-                <LayoutDashboard className="w-4 h-4" />
-                Dashboard
-              </TabsTrigger>
-              <TabsTrigger value="profile" className="gap-2">
-                <UserCircle className="w-4 h-4" />
-                My Profile
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex items-center gap-3">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="hidden md:flex">
+              <TabsList className="bg-slate-100 dark:bg-slate-800">
+                <TabsTrigger value="dashboard" className="gap-2">
+                  <LayoutDashboard className="w-4 h-4" />
+                  Dashboard
+                </TabsTrigger>
+                <TabsTrigger value="profile" className="gap-2">
+                  <UserCircle className="w-4 h-4" />
+                  My Profile
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="gap-1.5 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            >
+              <LogOut className="h-4 w-4" />
+              Log out
+            </Button>
+          </div>
         </div>
       </header>
 
-      <div className="md:hidden border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
+      <div className="md:hidden space-y-3 border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
+        <div className="flex items-center justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="gap-1.5 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+          >
+            <LogOut className="h-4 w-4" />
+            Log out
+          </Button>
+        </div>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
             <TabsTrigger value="dashboard" className="gap-2 rounded-lg data-[state=active]:shadow-sm">
