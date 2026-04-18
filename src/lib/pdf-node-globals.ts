@@ -1,6 +1,29 @@
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+
+const WORKER_REL = path.join("legacy", "build", "pdf.worker.mjs");
+
+/**
+ * Absolute file URL to pdfjs worker (required for fake worker / dynamic import in Node).
+ * Tries cwd-based paths first so Docker/standalone resolution matches the deployed layout.
+ */
+export function resolvePdfWorkerFileUrl(): string {
+  const candidates = [
+    path.join(process.cwd(), "node_modules", "pdfjs-dist", WORKER_REL),
+    path.join(process.cwd(), "public", "pdf.worker.mjs"),
+  ];
+  for (const file of candidates) {
+    if (fs.existsSync(file)) {
+      return pathToFileURL(file).href;
+    }
+  }
+  const pkgDir = path.dirname(require.resolve("pdfjs-dist/package.json"));
+  return pathToFileURL(path.join(pkgDir, WORKER_REL)).href;
+}
 
 let installed = false;
 

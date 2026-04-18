@@ -35,6 +35,11 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
+# Ensure pdfjs worker + wasm assets exist (Turbopack trace can omit dynamically imported files).
+RUN mkdir -p /app/node_modules
+COPY --from=builder /app/node_modules/pdfjs-dist ./node_modules/pdfjs-dist
+# Fallback path for worker resolution (see resolvePdfWorkerFileUrl + public/ candidate).
+COPY --from=builder /app/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs /app/public/pdf.worker.mjs
 
 RUN mkdir -p /app/data && chown -R pwuser:pwuser /app
 

@@ -1,8 +1,17 @@
 import fs from "fs";
 
 export async function parseResume(filePath: string): Promise<string> {
-  const { ensurePdfNodeGlobals } = await import("./pdf-node-globals");
+  const { ensurePdfNodeGlobals, resolvePdfWorkerFileUrl } = await import(
+    "./pdf-node-globals"
+  );
   ensurePdfNodeGlobals();
+
+  // Set worker on pdfjs *before* pdf-parse loads so fake-worker import() sees a valid file URL.
+  const workerSrc = resolvePdfWorkerFileUrl();
+  const pdfjsMod = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  if (pdfjsMod.GlobalWorkerOptions) {
+    pdfjsMod.GlobalWorkerOptions.workerSrc = workerSrc;
+  }
 
   const { PDFParse } = await import("pdf-parse");
 
