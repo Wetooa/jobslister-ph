@@ -9,7 +9,7 @@ import { Job, Analysis, Profile } from '@/lib/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { Briefcase, UserCircle, Sparkles, LayoutDashboard, RefreshCw, Globe, Plus, Search, ExternalLink } from 'lucide-react';
+import { Briefcase, UserCircle, Sparkles, LayoutDashboard, RefreshCw, Globe, Search, ExternalLink } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,8 @@ export default function Home() {
   const [isScrapingPortfolio, setIsScrapingPortfolio] = useState(false);
   const [scanImageUrl, setScanImageUrl] = useState<string | null>(null);
   const [lastScannedUrl, setLastScannedUrl] = useState<string | null>(null);
+  const [closedSyncLogs, setClosedSyncLogs] = useState<string[]>([]);
+  const [isSyncingClosed, setIsSyncingClosed] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -52,26 +54,41 @@ export default function Home() {
   }, []);
 
   const handleRefresh = async () => {
-    setIsLoading(true);
+    setClosedSyncLogs([]);
+    setIsSyncingClosed(true);
     try {
       await fetchData();
-      toast.info('Scanning for closed jobs in the background...');
-      
-      fetch('/api/jobs/sync', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
-          if (data.updatedCount > 0) {
-            toast.success(`Removed ${data.updatedCount} closed jobs!`);
-            fetchData();
-          } else if (data.success) {
-            toast.success('All active jobs are still open.');
-          }
-        })
-        .catch(() => console.error('Background sync failed'));
-    } catch (err) {
-      console.error(err);
+      toast.info('Checking each active job for closed listings…');
+
+      const res = await fetch('/api/jobs/sync', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Sync failed');
+      }
+
+      setClosedSyncLogs(data.logs || []);
+
+      if (data.updatedCount > 0) {
+        toast.success(`Marked ${data.updatedCount} job(s) as closed.`);
+        await fetchData();
+      } else if (data.checked === 0) {
+        toast.success('No active jobs to check.');
+      } else {
+        toast.success('No newly closed listings detected.');
+      }
+
+      if (data.failed > 0) {
+        toast.warning(`${data.failed} check(s) failed — see log for details.`);
+      }
+    } catch {
+      toast.error('Closed-job sync failed.');
+      setClosedSyncLogs((prev) => [
+        ...prev,
+        '**Error:** Request failed or server error.',
+      ]);
     } finally {
-      setIsLoading(false);
+      setIsSyncingClosed(false);
     }
   };
 
@@ -199,6 +216,21 @@ export default function Home() {
         </div>
       </header>
 
+      <div className="md:hidden border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+            <TabsTrigger value="dashboard" className="gap-2 rounded-lg data-[state=active]:shadow-sm">
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="profile" className="gap-2 rounded-lg data-[state=active]:shadow-sm">
+              <UserCircle className="h-4 w-4 shrink-0" />
+              Profile
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
       <div className="container mx-auto px-4 py-8 relative">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
           <TabsContent value="dashboard" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 outline-none">
@@ -249,8 +281,16 @@ export default function Home() {
                 <div className="flex items-center justify-between">
                   <h2 className="text-2xl font-bold">Recommended Jobs</h2>
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading} className="h-7 text-xs px-2 data-[state=open]:bg-muted">
-                      <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isLoading ? 'animate-spin' : ''}`} />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefresh}
+                      disabled={isLoading || isSyncingClosed}
+                      className="h-7 px-2 text-xs data-[state=open]:bg-muted"
+                    >
+                      <RefreshCw
+                        className={`mr-1.5 h-3.5 w-3.5 ${isSyncingClosed ? 'animate-spin' : ''}`}
+                      />
                       Refresh List
                     </Button>
                     <Badge variant="outline" className="px-3 py-1 text-xs border-slate-200 bg-white dark:bg-slate-900">
@@ -258,16 +298,38 @@ export default function Home() {
                     </Badge>
                   </div>
                 </div>
+
+                {(isSyncingClosed || closedSyncLogs.length > 0) && (
+                  <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-2">
+                    <ScanTerminal
+                      title="Closed job check"
+                      description="Playwright loads each job URL, reads HTTP status and page text to detect inactive listings."
+                      emptyMessage="Running Playwright against each job URL…"
+                      logs={closedSyncLogs}
+                      isComplete={!isSyncingClosed}
+                    />
+                    {!isSyncingClosed && closedSyncLogs.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => setClosedSyncLogs([])}
+                        className="w-full text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+                      >
+                        Clear log
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 <JobList jobs={jobs} analysis={analysis} />
               </div>
             </div>
           </TabsContent>
 
           <TabsContent value="profile" className="animate-in fade-in slide-in-from-bottom-4 duration-700 outline-none">
-            <div className="max-w-6xl mx-auto space-y-10">
+            <div className="mx-auto max-w-6xl space-y-8 md:space-y-10">
               
               {/* Premium Header */}
-              <div className="relative overflow-hidden rounded-3xl bg-slate-900 p-8 md:p-12 text-white shadow-2xl">
+              <div className="relative overflow-hidden rounded-3xl bg-slate-900 p-6 shadow-2xl text-white md:p-12">
                 <div className="absolute top-0 right-0 -m-12 h-64 w-64 rounded-full bg-indigo-500/20 blur-3xl" />
                 <div className="absolute bottom-0 left-0 -m-12 h-64 w-64 rounded-full bg-purple-500/20 blur-3xl" />
                 
@@ -286,11 +348,11 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+              <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10">
                 {/* Left Column: Tools & Control */}
                 <div className="space-y-8">
                   {/* Portfolio Manager Card */}
-                  <Card className="border-none shadow-xl bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl overflow-hidden">
+                  <Card className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/60 shadow-xl backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/50">
                     <div className="h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
@@ -338,9 +400,9 @@ export default function Home() {
                   </Card>
 
                   {/* Tech Stack Visualization */}
-                  <Card className="border-none shadow-xl bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Tech Stack</CardTitle>
+                  <Card className="rounded-2xl border border-slate-200/70 bg-white/60 shadow-xl backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/50">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg tracking-tight">Tech Stack</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-6">
                       {profile?.skills && Object.entries(profile.skills).map(([category, items], i) => (
@@ -410,7 +472,7 @@ export default function Home() {
                     
                     <div className="grid grid-cols-1 gap-6">
                       {profile?.projects?.map((proj, i) => (
-                        <Card key={i} className="group border-none shadow-xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+                        <Card key={i} className="group rounded-2xl border border-slate-200/60 bg-white/85 shadow-xl backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl dark:border-slate-800/70 dark:bg-slate-900/80">
                           <CardContent className="p-8 space-y-5">
                             <div className="flex justify-between items-start">
                               <div className="space-y-1">

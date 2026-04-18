@@ -64,13 +64,13 @@ export function JobSearch({ onSearchStarted, isLoading, profile }: JobSearchProp
   };
 
   return (
-    <Card className="shadow-sm border-slate-200">
-      <CardHeader>
-        <CardTitle className="text-xl flex items-center gap-2">
-          <Search className="w-5 h-5 text-primary" />
+    <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/80 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50">
+      <CardHeader className="space-y-1 pb-4">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <Search className="h-5 w-5 text-primary" />
           Job Search Parameters
         </CardTitle>
-        <CardDescription>
+        <CardDescription className="text-slate-600 dark:text-slate-400">
           Specify keywords for the job search on OnlineJobs.ph
         </CardDescription>
       </CardHeader>
@@ -82,6 +82,7 @@ export function JobSearch({ onSearchStarted, isLoading, profile }: JobSearchProp
             placeholder="e.g. React Developer"
             onKeyDown={(e) => e.key === 'Enter' && addQuery()}
             disabled={isLoading}
+            className="h-10 rounded-xl border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/50"
           />
           <Button variant="outline" size="icon" onClick={addQuery} disabled={isLoading}>
             <Plus className="h-4 w-4" />
@@ -108,7 +109,7 @@ export function JobSearch({ onSearchStarted, isLoading, profile }: JobSearchProp
         <Button 
           onClick={handleSearch} 
           disabled={isLoading || queries.length === 0}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 font-bold py-6 shadow-md transition-all active:scale-[0.98]"
+          className="h-12 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 font-bold shadow-md transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98]"
         >
           {isLoading ? (
             <>

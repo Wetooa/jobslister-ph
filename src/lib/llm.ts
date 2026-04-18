@@ -1,11 +1,23 @@
 import axios from 'axios';
 import { Profile, Analysis } from './types';
 
+const DEFAULT_MODEL = 'gemma4:31b-cloud';
+
+function resolveOllamaEndpoint(): string {
+  if (process.env.OLLAMA_API_URL) return process.env.OLLAMA_API_URL;
+  const host = process.env.OLLAMA_HOST;
+  if (host) return `${host.replace(/\/$/, '')}/api/generate`;
+  return 'http://localhost:11434/api/generate';
+}
+
 export class LLMClient {
   private model: string;
   private endpoint: string;
 
-  constructor(model: string = 'qwen3.5:cloud', endpoint: string = 'http://localhost:11434/api/generate') {
+  constructor(
+    model: string = process.env.OLLAMA_MODEL ?? DEFAULT_MODEL,
+    endpoint: string = resolveOllamaEndpoint()
+  ) {
     this.model = model;
     this.endpoint = endpoint;
   }

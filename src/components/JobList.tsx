@@ -5,7 +5,8 @@ import { Job, Analysis } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-import { ExternalLink, CheckCircle2, XCircle, AlertCircle, X, Bookmark, BookmarkCheck, CheckSquare, Square, Trash2, EyeOff } from 'lucide-react';
+import { ExternalLink, CheckCircle2, XCircle, AlertCircle, X, Bookmark, BookmarkCheck, CheckSquare, Square, Trash2, EyeOff, MapPin, CircleDollarSign, Pin, UserMinus, Eye } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 interface JobListProps {
   jobs: Job[];
@@ -108,15 +109,15 @@ export function JobList({ jobs, analysis }: JobListProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-          <div className="flex-1 w-full sm:max-w-md">
-            <input
+      <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/80">
+        <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+          <div className="w-full flex-1 sm:max-w-md">
+            <Input
               type="text"
               placeholder="Search keywords or skills (e.g. Node.js, Python)..."
               value={skillFilter}
               onChange={e => setSkillFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-primary focus:border-primary p-2 dark:bg-slate-800 dark:border-slate-700 dark:placeholder-slate-400 dark:text-white"
+              className="h-10 w-full rounded-xl border-slate-200 bg-slate-50/90 text-slate-900 dark:border-slate-700 dark:bg-slate-800/80 dark:text-white"
             />
           </div>
 
@@ -151,14 +152,20 @@ export function JobList({ jobs, analysis }: JobListProps) {
 
           <div className="flex items-center gap-4 flex-wrap">
             <span className="text-sm font-medium text-slate-500">Status:</span>
-            <label className="flex items-center gap-1.5 text-sm cursor-pointer text-amber-700 dark:text-amber-500">
-              <input type="checkbox" checked={showSaved} onChange={e => setShowSaved(e.target.checked)} className="rounded border-amber-300 text-amber-500 focus:ring-amber-500" /> Saved Only 📌
+            <label className="flex cursor-pointer items-center gap-1.5 text-sm text-amber-700 dark:text-amber-500">
+              <input type="checkbox" checked={showSaved} onChange={e => setShowSaved(e.target.checked)} className="rounded border-amber-300 text-amber-500 focus:ring-amber-500" />
+              <Pin className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              Saved only
             </label>
-            <label className="flex items-center gap-1.5 text-sm cursor-pointer text-slate-500 dark:text-slate-400">
-              <input type="checkbox" checked={hideApplied} onChange={e => setHideApplied(e.target.checked)} className="rounded border-slate-300 text-slate-500 focus:ring-slate-500" /> Hide Applied 🚫
+            <label className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+              <input type="checkbox" checked={hideApplied} onChange={e => setHideApplied(e.target.checked)} className="rounded border-slate-300 text-slate-500 focus:ring-slate-500" />
+              <UserMinus className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              Hide applied
             </label>
-            <label className="flex items-center gap-1.5 text-sm cursor-pointer text-slate-500 dark:text-slate-400">
-              <input type="checkbox" checked={showBlacklisted} onChange={e => setShowBlacklisted(e.target.checked)} className="rounded border-slate-300 text-slate-500 focus:ring-slate-500" /> Show Blacklisted 👁️‍🗨️
+            <label className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+              <input type="checkbox" checked={showBlacklisted} onChange={e => setShowBlacklisted(e.target.checked)} className="rounded border-slate-300 text-slate-500 focus:ring-slate-500" />
+              <Eye className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+              Show blacklisted
             </label>
           </div>
         </div>
@@ -226,16 +233,22 @@ export function JobList({ jobs, analysis }: JobListProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex-1 space-y-4">
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p>📍 {job.typeOfWork || 'N/A'}</p>
-                <p>💰 {job.salary || 'N/A'}</p>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p className="flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                  {job.typeOfWork || 'N/A'}
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <CircleDollarSign className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                  {job.salary || 'N/A'}
+                </p>
               </div>
 
               {job.match && (
                 <div className="space-y-3">
                   <div className="text-sm border-t pt-2 mt-2">
                     <p className="font-semibold text-xs uppercase tracking-wider text-muted-foreground mb-1">Reasoning</p>
-                    <p className="text-slate-700 dark:text-slate-300 line-clamp-3 italic">"{job.match.reasoning}"</p>
+                    <p className="text-slate-700 dark:text-slate-300 line-clamp-3 italic">{job.match.reasoning}</p>
                   </div>
 
                   <div className="flex flex-col gap-1.5 w-full">
@@ -303,8 +316,14 @@ export function JobList({ jobs, analysis }: JobListProps) {
                     {selectedJob.title}
                   </h2>
                   <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-600 dark:text-slate-400">
-                    <span className="flex items-center gap-1">📍 {selectedJob.typeOfWork || 'N/A'}</span>
-                    <span className="flex items-center gap-1">💰 {selectedJob.salary || 'N/A'}</span>
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      {selectedJob.typeOfWork || 'N/A'}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <CircleDollarSign className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      {selectedJob.salary || 'N/A'}
+                    </span>
                     <a href={selectedJob.link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 ml-auto">
                       View original post <ExternalLink className="w-3 h-3" />
                     </a>
@@ -316,7 +335,7 @@ export function JobList({ jobs, analysis }: JobListProps) {
                     <div>
                       <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">AI Reasoning</h3>
                       <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed italic border-l-2 border-primary/40 pl-3">
-                        "{selectedJob.match.reasoning}"
+                        {selectedJob.match.reasoning}
                       </p>
                     </div>
 
