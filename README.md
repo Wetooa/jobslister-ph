@@ -87,6 +87,7 @@ Open [http://localhost:3000](http://localhost:3000), sign in with `ADMIN_PASSWOR
 | `OLLAMA_API_URL` | No                 | Full URL for `POST` generate API.                                                           |
 | `OLLAMA_HOST`    | No                 | Base URL without path; combined with `/api/generate` when `OLLAMA_API_URL` is unset.        |
 | `OLLAMA_MODEL`   | No                 | Model id passed to Ollama.                                                                  |
+| `OLLAMA_API_KEY` | For cloud models in Docker | Set for the Compose **`ollama`** service (see [Docker](#docker)). Same key as [ollama.com/settings/keys](https://ollama.com/settings/keys). Omit for local-only models. |
 
 
 Never commit `.env.local` or real secrets. For production, set these in your host’s secret store or dashboard.
@@ -113,11 +114,10 @@ Build a production bundle with `npm run build`, then run `npm run start`. Ensure
 
 The repo includes a multi-stage `[Dockerfile](Dockerfile)` (Next.js **standalone** output) and `[docker-compose.yml](docker-compose.yml)`. The runtime image is based on [Playwright’s Docker image](https://playwright.dev/docs/docker) so Chromium matches the app’s Playwright version.
 
-1. Create a `**.env`** file in the project root (Compose reads it via `env_file`). You can start from the template: `cp .env.example .env` and edit values (or copy from `.env.local`). At minimum set `ADMIN_PASSWORD`. For AI features, point Ollama at the machine where it runs:
-  - **Ollama on the same host as Docker (typical):** set  
-   `OLLAMA_HOST=http://host.docker.internal:11434`  
-   Compose adds `host.docker.internal` → host gateway on Linux as well, so this works on Docker Desktop and modern Linux engines.
-  - **Ollama in another container or remote host:** use that host’s URL in `OLLAMA_API_URL` or `OLLAMA_HOST` instead.
+1. Create a `**.env`** file in the project root (Compose loads it for the `app` service and for variable substitution). You can start from the template: `cp .env.example .env` and edit values (or copy from `.env.local`). At minimum set `ADMIN_PASSWORD`.
+   - **Stack includes Ollama in Compose:** `docker-compose.yml` runs an `ollama` service and sets `OLLAMA_HOST` / `OLLAMA_MODEL` on the app. **Cloud models** (the default `gemma4:31b-cloud`) need **`OLLAMA_API_KEY`** in `.env` — create a key at [ollama.com/settings/keys](https://ollama.com/settings/keys). Without it, Ollama returns **401** for cloud inference. Compose passes the key into the `ollama` container (not the Next.js app).
+   - **Ollama only on the host:** set `OLLAMA_HOST=http://host.docker.internal:11434` (and adjust `app` `environment` in Compose if you remove the bundled `ollama` service). Compose maps `host.docker.internal` on Docker Desktop and modern Linux engines.
+   - **Ollama on another machine:** use that host’s URL in `OLLAMA_API_URL` or `OLLAMA_HOST` instead.
 2. Ensure a writable `**./data`** directory exists on the host (or let the app create files on first run). Jobs, profile, and analysis JSON files are stored under `data/` relative to the process working directory (`/app/data` in the container).
 3. Build and run:
   ```bash

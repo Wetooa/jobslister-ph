@@ -1,6 +1,9 @@
 services:
   ollama:
     image: ollama/ollama:latest
+    # Cloud models (e.g. gemma4:31b-cloud) need ollama.com auth — set in `.env` (see .env.example).
+    environment:
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
     volumes:
       - ollama_data:/root/.ollama
     ports:
