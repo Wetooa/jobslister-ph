@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { parseResume } from '@/lib/parser';
 import { LLMClient } from '@/lib/llm';
 import fs from 'fs';
 import path from 'path';

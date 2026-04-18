@@ -1,7 +1,11 @@
 import fs from "fs";
-import { PDFParse } from "pdf-parse";
 
 export async function parseResume(filePath: string): Promise<string> {
+  const { ensurePdfNodeGlobals } = await import("./pdf-node-globals");
+  ensurePdfNodeGlobals();
+
+  const { PDFParse } = await import("pdf-parse");
+
   try {
     const dataBuffer = fs.readFileSync(filePath);
     const parser = new PDFParse({ data: dataBuffer });
