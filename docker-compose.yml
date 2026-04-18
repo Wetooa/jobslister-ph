@@ -21,7 +21,7 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-    command: ["ollama", "pull", "gemma4:31b-cloud"]
+    command: ["pull", "gemma4:31b-cloud"]
     restart: "no"
 
   app:
@@ -29,7 +29,8 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       NODE_ENV: production
       # Overrides .env so the app targets the compose network, not the host.
