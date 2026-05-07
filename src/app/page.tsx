@@ -31,6 +31,7 @@ export default function Home() {
   const [lastScannedUrl, setLastScannedUrl] = useState<string | null>(null);
   const [closedSyncLogs, setClosedSyncLogs] = useState<string[]>([]);
   const [isSyncingClosed, setIsSyncingClosed] = useState(false);
+  const [isDedupingJobs, setIsDedupingJobs] = useState(false);
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
@@ -89,14 +90,68 @@ export default function Home() {
       if (data.failed > 0) {
         toast.warning(`${data.failed} check(s) failed — see log for details.`);
       }
+
+      toast.info('Starting AI analysis for jobs missing analysis...');
+      setIsLoading(true);
+      setScanLogs([]);
+      setIsScanComplete(false);
+
+      const scanStartRes = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queries: [] }),
+      });
+      if (!scanStartRes.ok) {
+        const errData = await scanStartRes.json();
+        throw new Error(errData.error || 'Failed to start analysis run');
+      }
+
+      const streamRes = await fetch('/api/jobs/stream');
+      if (!streamRes.body) throw new Error('No streaming response body found');
+
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let analysisRunComplete = false;
+
+      while (!analysisRunComplete) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n\n');
+
+        for (const line of lines) {
+          if (!line.trim().startsWith('data: ')) continue;
+          try {
+            const eventData = JSON.parse(line.trim().slice(6));
+            if (eventData.event === 'log') {
+              setScanLogs((prev) => [...prev, eventData.message]);
+            } else if (eventData.event === 'error') {
+              toast.error(eventData.message);
+              setScanLogs((prev) => [...prev, `**Error:** ${eventData.message}`]);
+            } else if (eventData.event === 'analysisAdded') {
+              fetchData();
+            } else if (eventData.event === 'complete') {
+              analysisRunComplete = true;
+            }
+          } catch {
+            // Incomplete chunk parsing
+          }
+        }
+      }
+
+      setIsScanComplete(true);
+      toast.success('Refresh complete. Missing analyses were processed.');
+      await fetchData();
     } catch {
-      toast.error('Closed-job sync failed.');
+      toast.error('Refresh run failed.');
       setClosedSyncLogs((prev) => [
         ...prev,
         '**Error:** Request failed or server error.',
       ]);
     } finally {
       setIsSyncingClosed(false);
+      setIsLoading(false);
     }
   };
 
@@ -124,6 +179,34 @@ export default function Home() {
       toast.error('An error occurred during portfolio scan');
     } finally {
       setIsScrapingPortfolio(false);
+    }
+  };
+
+  const handleDedupeJobs = async () => {
+    setIsDedupingJobs(true);
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'dedupe' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to dedupe jobs');
+      }
+
+      if (data.removedDuplicates > 0) {
+        toast.success(
+          `Removed ${data.removedDuplicates} duplicate job(s). ${data.beforeCount} -> ${data.afterCount}`
+        );
+      } else {
+        toast.info('No duplicate jobs found.');
+      }
+      await fetchData();
+    } catch {
+      toast.error('Failed to run duplicate cleanup.');
+    } finally {
+      setIsDedupingJobs(false);
     }
   };
 
@@ -317,13 +400,25 @@ export default function Home() {
                       variant="outline"
                       size="sm"
                       onClick={handleRefresh}
-                      disabled={isLoading || isSyncingClosed}
+                      disabled={isLoading || isSyncingClosed || isDedupingJobs}
                       className="h-7 px-2 text-xs data-[state=open]:bg-muted"
                     >
                       <RefreshCw
                         className={`mr-1.5 h-3.5 w-3.5 ${isSyncingClosed ? 'animate-spin' : ''}`}
                       />
                       Refresh List
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDedupeJobs}
+                      disabled={isLoading || isSyncingClosed || isDedupingJobs}
+                      className="h-7 px-2 text-xs data-[state=open]:bg-muted"
+                    >
+                      <RefreshCw
+                        className={`mr-1.5 h-3.5 w-3.5 ${isDedupingJobs ? 'animate-spin' : ''}`}
+                      />
+                      {isDedupingJobs ? 'Cleaning…' : 'Cleanup Duplicates'}
                     </Button>
                     <Badge variant="outline" className="px-3 py-1 text-xs border-slate-200 bg-white dark:bg-slate-900">
                       {jobs.length} Opportunities found

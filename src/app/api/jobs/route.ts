@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Storage } from '@/lib/storage';
+import { Storage, dedupeJobsByLink, normalizeJobLink } from '@/lib/storage';
 import { JobScraper } from '@/lib/scraper';
 import { LLMClient } from '@/lib/llm';
 import { Job, Analysis, Profile } from '@/lib/types';
@@ -24,8 +24,26 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
     sendLog(`**Initialization complete.** Starting background scanner for queries: [${queries.join(', ')}]`);
     const llm = new LLMClient();
 
-    let jobCache = Storage.getJobs();
+    const dedupeResult = dedupeJobsByLink(Storage.getJobs());
+    let jobCache = dedupeResult.jobs;
+    if (dedupeResult.removedDuplicates > 0) {
+      Storage.saveJobs(jobCache);
+      sendLog(
+        `[System] Deduplicated job cache: removed ${dedupeResult.removedDuplicates} duplicate records.`
+      );
+    }
     let analysisCache = Storage.getAnalysis();
+    const normalizedAnalysisCache = Object.entries(analysisCache).reduce<Record<string, Analysis>>(
+      (acc, [link, value]) => {
+        acc[normalizeJobLink(link)] = value;
+        return acc;
+      },
+      {}
+    );
+    if (Object.keys(normalizedAnalysisCache).length !== Object.keys(analysisCache).length) {
+      analysisCache = normalizedAnalysisCache;
+      Storage.saveAnalysis(analysisCache);
+    }
 
     // 1. Search and Scrape
     for (const query of queries) {
@@ -35,7 +53,8 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
 
       for (let i = 0; i < searchResults.length; i++) {
         const res = searchResults[i];
-        const existingJob = jobCache.find(j => j.link === res.link);
+        const normalizedLink = normalizeJobLink(res.link);
+        const existingJob = jobCache.find(j => normalizeJobLink(j.link) === normalizedLink);
 
         let shouldSave = false;
 
@@ -55,14 +74,14 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
               if (existingJob) {
                 Object.assign(existingJob, details);
               } else {
-                jobCache.push({ ...res, ...details, tags: [query] } as Job);
+                jobCache.push({ ...res, ...details, link: normalizedLink, tags: [query] } as Job);
               }
               shouldSave = true;
               sendLog(`[Scraping] Successfully cached description for: **${res.title}**`);
             }
           } catch (e: any) {
             sendLog(`[Scraping] Failed to retrieve details for: ${res.title}`);
-            const job = existingJob || { ...res, tags: [query] };
+            const job = existingJob || { ...res, link: normalizedLink, tags: [query] };
             (job as Job).scrapeError = e.message || 'Scrape failed';
             if (!existingJob) jobCache.push(job as Job);
             shouldSave = true;
@@ -75,7 +94,14 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
 
     // 2. Pre-Sort Unanalyzed Jobs
     sendLog(`[System] Scraping pipeline complete. Preparing LLM analysis queue...`);
-    const unanalyzedJobs = jobCache.filter(j => j.description && !analysisCache[j.link] && !j.isClosed);
+    const seenLinks = new Set<string>();
+    const unanalyzedJobs = jobCache.filter((job) => {
+      if (!job.description || job.isClosed) return false;
+      const normalizedLink = normalizeJobLink(job.link);
+      if (seenLinks.has(normalizedLink)) return false;
+      seenLinks.add(normalizedLink);
+      return !analysisCache[normalizedLink];
+    });
     sendLog(`[Heuristics] Processing ${unanalyzedJobs.length} unanalyzed jobs through pre-screening.`);
 
     const getPreScore = (job: Job, prof: Profile) => {
@@ -103,42 +129,56 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
       const batch = jobsToAnalyze.slice(i, i + CONCURRENCY);
       sendLog(`[AI Agent] Processing batch ${Math.floor(i / CONCURRENCY) + 1} (${batch.length} jobs concurrently)...`);
 
-      await Promise.all(batch.map(async (job) => {
-        sendLog(`[AI Agent] Analyzing: **${job.title}**`);
-        const context = `Job Title: ${job.title}\nType: ${job.typeOfWork}\nSalary: ${job.salary}\nSkills: ${job.skills}\nDescription: ${job.description}`;
-        const comparison = await llm.compareJob(profile, context);
+      await Promise.all(
+        batch.map(async (job) => {
+          try {
+            sendLog(`[AI Agent] Analyzing: **${job.title}**`);
+            const context = `Job Title: ${job.title}\nType: ${job.typeOfWork}\nSalary: ${job.salary}\nSkills: ${job.skills}\nDescription: ${job.description}`;
+            const comparison = await llm.compareJob(profile, context);
 
-        if ('matchScore' in comparison || 'match_score' in comparison) {
-          const score = (comparison as any).matchScore ?? (comparison as any).match_score ?? 0;
-          const normalized: Analysis = {
-            matchScore: score,
-            pros: Array.isArray((comparison as any).pros) ? (comparison as any).pros : [],
-            cons: Array.isArray((comparison as any).cons) ? (comparison as any).cons : [],
-            recommendation: (comparison as any).recommendation || 'Skip',
-            reasoning: (comparison as any).reasoning || (comparison as any).reason || 'No reasoning provided.'
-          };
-          analysisCache[job.link] = normalized;
-          sendLog(`[AI Agent] Rated **${job.title}**: ${normalized.matchScore}% Match`);
-        } else {
-          let errorMsg = (comparison as any).error;
-          if (!errorMsg) {
-            const keys = Object.keys(comparison).join(', ');
-            errorMsg = `Schema mismatch: Expected "matchScore" but found keys [${keys || 'none'}]`;
+            if ('matchScore' in comparison || 'match_score' in comparison) {
+              const score = (comparison as any).matchScore ?? (comparison as any).match_score ?? 0;
+              const normalized: Analysis = {
+                matchScore: score,
+                pros: Array.isArray((comparison as any).pros) ? (comparison as any).pros : [],
+                cons: Array.isArray((comparison as any).cons) ? (comparison as any).cons : [],
+                recommendation: (comparison as any).recommendation || 'Skip',
+                reasoning: (comparison as any).reasoning || (comparison as any).reason || 'No reasoning provided.'
+              };
+              analysisCache[normalizeJobLink(job.link)] = normalized;
+              sendLog(`[AI Agent] Rated **${job.title}**: ${normalized.matchScore}% Match`);
+            } else {
+              let errorMsg = (comparison as any).error;
+              if (!errorMsg) {
+                const keys = Object.keys(comparison).join(', ');
+                errorMsg = `Schema mismatch: Expected "matchScore" but found keys [${keys || 'none'}]`;
+              }
+              analysisCache[normalizeJobLink(job.link)] = {
+                matchScore: -1,
+                pros: [],
+                cons: [],
+                recommendation: 'Skip',
+                reasoning: `Analysis failed: ${errorMsg}`
+              };
+              sendLog(`[AI Agent] Analysis failed for **${job.title}**: ${errorMsg}`);
+            }
+          } catch (e: unknown) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            analysisCache[normalizeJobLink(job.link)] = {
+              matchScore: -1,
+              pros: [],
+              cons: [],
+              recommendation: 'Skip',
+              reasoning: `Analysis failed: ${errorMsg}`
+            };
+            sendLog(`[AI Agent] Analysis failed for **${job.title}**: ${errorMsg}`);
           }
-          analysisCache[job.link] = {
-            matchScore: -1,
-            pros: [],
-            cons: [],
-            recommendation: 'Skip',
-            reasoning: `Analysis failed: ${errorMsg}`
-          };
-          sendLog(`[AI Agent] Analysis failed for **${job.title}**: ${errorMsg}`);
-        }
 
-        // Save after EACH job completes to ensure no progress is lost
-        Storage.saveAnalysis(analysisCache);
-        scanEmitter.emit('analysisAdded');
-      }));
+          // Save after EACH job completes so one failure never aborts the rest of the queue
+          Storage.saveAnalysis(analysisCache);
+          scanEmitter.emit('analysisAdded');
+        })
+      );
 
       // Polite delay between batches instead of jobs
       if (i + CONCURRENCY < jobsToAnalyze.length) {
@@ -177,7 +217,21 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { link, isSaved, hasApplied, isClosed, isBlacklisted } = await req.json();
+    const { link, isSaved, hasApplied, isClosed, isBlacklisted, action } = await req.json();
+    if (action === 'dedupe') {
+      const jobCache = Storage.getJobs();
+      const result = dedupeJobsByLink(jobCache);
+      if (result.removedDuplicates > 0) {
+        Storage.saveJobs(result.jobs);
+      }
+      return NextResponse.json({
+        success: true,
+        beforeCount: result.beforeCount,
+        afterCount: result.afterCount,
+        removedDuplicates: result.removedDuplicates,
+        mergedRecordCount: result.mergedRecordCount,
+      });
+    }
     if (!link) {
       return NextResponse.json({ error: 'Missing job link' }, { status: 400 });
     }

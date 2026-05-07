@@ -10,6 +10,28 @@ function resolveOllamaEndpoint(): string {
   return 'http://localhost:11434/api/generate';
 }
 
+function extractJsonObjectString(raw: string): string {
+  const trimmed = raw.trim();
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1).trim();
+  }
+
+  return trimmed;
+}
+
+function parseJsonFromLLM<T>(raw: string): T {
+  const candidate = extractJsonObjectString(raw);
+  return JSON.parse(candidate) as T;
+}
+
 export class LLMClient {
   private model: string;
   private endpoint: string;
@@ -87,7 +109,7 @@ Extracted JSON:`;
 
     const response = await this.generate(prompt, systemMessage);
     try {
-      const parsed = JSON.parse(response);
+      const parsed = parseJsonFromLLM<Profile>(response);
       return parsed as Profile;
     } catch (e: any) {
       console.warn("Parsing failure in analyzeResume. Raw response:", response);
@@ -122,7 +144,7 @@ Output strictly in JSON.`;
 
     const response = await this.generate(prompt, systemMessage);
     try {
-      const parsed = JSON.parse(response);
+      const parsed = parseJsonFromLLM<Analysis & { match_score?: number; reason?: string }>(response);
       
       // Simple normalization for common schema variations
       const normalized: any = { ...parsed };
@@ -160,7 +182,7 @@ Output the updated Profile object in the same JSON format.`;
     const prompt = "Updated Profile JSON:";
     const response = await this.generate(prompt, systemMessage);
     try {
-      return JSON.parse(response) as Profile;
+      return parseJsonFromLLM<Profile>(response);
     } catch (e: any) {
       console.warn("Parsing failure in enhanceProfileWithScrapedData. Raw response:", response);
       return { error: `Failed to parse JSON: ${e.message}`, raw: response };

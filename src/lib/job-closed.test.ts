@@ -12,6 +12,7 @@ type PageScenario = {
   status?: number;
   bodyText?: string;
   html?: string;
+  pageTitle?: string;
   gotoError?: Error;
 };
 
@@ -37,8 +38,9 @@ function createMockBrowser() {
             const st = s.status ?? 200;
             return { status: () => st };
           }),
-          evaluate: vi.fn(async () => (s.bodyText ?? '').toLowerCase()),
-          content: vi.fn(async () => (s.html ?? '<html></html>').toLowerCase()),
+          evaluate: vi.fn(async () => s.bodyText ?? ''),
+          content: vi.fn(async () => s.html ?? '<html></html>'),
+          title: vi.fn(async () => s.pageTitle ?? ''),
           close: vi.fn().mockResolvedValue(undefined),
         };
       }),
@@ -51,7 +53,23 @@ function createMockBrowser() {
 import {
   checkJobClosedWithPage,
   markClosedJobsWithPlaywright,
+  normalizeForClosedMatch,
 } from './job-closed';
+
+describe('normalizeForClosedMatch', () => {
+  it('collapses newlines so closed phrases match', () => {
+    const n = normalizeForClosedMatch('This job\n\nhas been closed');
+    expect(n).toBe('this job has been closed');
+    expect(n.includes('this job has been closed')).toBe(true);
+  });
+
+  it('collapses nbsp and zero-width space', () => {
+    const n = normalizeForClosedMatch(
+      `This job${'\u00a0'}has${'\u200b'} been closed`
+    );
+    expect(n.includes('this job has been closed')).toBe(true);
+  });
+});
 
 describe('checkJobClosedWithPage', () => {
   beforeEach(() => {
@@ -113,6 +131,68 @@ describe('checkJobClosedWithPage', () => {
     if (!result.ok) {
       expect(result.error).toContain('ERR_ABORTED');
     }
+  });
+
+  it('detects closed when phrase has newlines in body text', async () => {
+    scenarios = [
+      {
+        status: 200,
+        bodyText: 'This job\n\nhas been closed',
+        html: '<html></html>',
+      },
+    ];
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch();
+    const ctx = await browser.newContext();
+    const result = await checkJobClosedWithPage(ctx, 'https://example.com/job', 5000);
+    expect(result).toEqual({ ok: true, closed: true, httpStatus: 200 });
+  });
+
+  it('detects closed when nbsp separates words in body text', async () => {
+    scenarios = [
+      {
+        status: 200,
+        bodyText: `This job${'\u00a0'}has been closed`,
+        html: '<html></html>',
+      },
+    ];
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch();
+    const ctx = await browser.newContext();
+    const result = await checkJobClosedWithPage(ctx, 'https://example.com/job', 5000);
+    expect(result).toEqual({ ok: true, closed: true, httpStatus: 200 });
+  });
+
+  it('detects closed from page title when body is minimal', async () => {
+    scenarios = [
+      {
+        status: 200,
+        pageTitle: 'This Job Has Been Closed | OnlineJobs.ph',
+        bodyText: 'x',
+        html: '<html><body>x</body></html>',
+      },
+    ];
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch();
+    const ctx = await browser.newContext();
+    const result = await checkJobClosedWithPage(ctx, 'https://example.com/job', 5000);
+    expect(result).toEqual({ ok: true, closed: true, httpStatus: 200 });
+  });
+
+  it('detects closed when phrase is split across HTML tags', async () => {
+    scenarios = [
+      {
+        status: 200,
+        bodyText: '',
+        html:
+          '<html><body><div>This job</div><div>has been closed</div></body></html>',
+      },
+    ];
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch();
+    const ctx = await browser.newContext();
+    const result = await checkJobClosedWithPage(ctx, 'https://example.com/job', 5000);
+    expect(result).toEqual({ ok: true, closed: true, httpStatus: 200 });
   });
 });
 

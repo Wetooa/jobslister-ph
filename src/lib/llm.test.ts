@@ -142,4 +142,25 @@ describe('LLMClient', () => {
       throw new Error('expected analysis');
     }
   });
+
+  it('compareJob parses fenced JSON responses', async () => {
+    mockPost.mockResolvedValueOnce({
+      data: {
+        response: "```json\n{\n  \"matchScore\": 72,\n  \"pros\": [\"TypeScript\"],\n  \"cons\": [],\n  \"recommendation\": \"Apply\",\n  \"reasoning\": \"Solid fit\"\n}\n```",
+      },
+    });
+
+    const client = new LLMClient('m', 'http://localhost/api/generate');
+    const result = await client.compareJob(
+      { skills: {}, projects: [] },
+      'job text'
+    );
+
+    if ('matchScore' in result && !('error' in result)) {
+      expect(result.matchScore).toBe(72);
+      expect(result.recommendation).toBe('Apply');
+    } else {
+      throw new Error('expected analysis');
+    }
+  });
 });

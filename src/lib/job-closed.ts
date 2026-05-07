@@ -27,6 +27,18 @@ function truncateUrl(url: string): string {
   return `${url.slice(0, MAX_URL_LOG_LEN)}…`;
 }
 
+/** Collapses unicode spaces and line breaks so substring phrases still match. */
+export function normalizeForClosedMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\s\u00a0\uFEFF\u200b]+/g, ' ')
+    .trim();
+}
+
+function stripHtmlTagsToText(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ');
+}
+
 export async function checkJobClosedWithPage(
   context: BrowserContext,
   url: string,
@@ -35,7 +47,7 @@ export async function checkJobClosedWithPage(
   const page = await context.newPage();
   try {
     const response = await page.goto(url, {
-      waitUntil: 'domcontentloaded',
+      waitUntil: 'load',
       timeout: navigationTimeoutMs,
     });
     const httpStatus = response?.status() ?? null;
@@ -43,11 +55,15 @@ export async function checkJobClosedWithPage(
       return { ok: true, closed: true, httpStatus };
     }
 
-    const text = (
-      await page.evaluate(() => document.body?.innerText ?? '')
-    ).toLowerCase();
-    const html = (await page.content()).toLowerCase();
-    const blob = `${text}\n${html}`;
+    const title = await page.title();
+    const bodyText = await page.evaluate(
+      () => document.body?.innerText ?? ''
+    );
+    const rawHtml = await page.content();
+    const htmlPlain = stripHtmlTagsToText(rawHtml);
+    const blob = normalizeForClosedMatch(
+      `${title}\n${bodyText}\n${htmlPlain}`
+    );
     const closed = CLOSED_SUBSTRINGS.some((p) => blob.includes(p));
     return { ok: true, closed, httpStatus };
   } catch (e) {
