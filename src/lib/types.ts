@@ -36,11 +36,15 @@ export interface Job {
   isBlacklisted?: boolean;
   tags?: string[];
   scrapeError?: string;
+  postedAt?: string;
+  recencyScore?: number;
 }
 
 export interface Analysis {
   matchScore: number;
   match_score?: number;
+  rawMatchScore?: number;
+  recencyScore?: number;
   pros: string[];
   cons: string[];
   recommendation: 'Apply' | 'Skip';

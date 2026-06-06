@@ -210,16 +210,16 @@ export default function Home() {
     }
   };
 
-  const handleSearch = async (queries: string[]) => {
+  const runScanStream = async (body: { queries: string[]; maxAgeDays?: number; reset?: boolean; jobsPerQuery?: number }) => {
     setIsLoading(true);
     setScanLogs([]);
     setIsScanComplete(false);
-    
+
     try {
       const res = await fetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ queries }),
+        body: JSON.stringify(body),
       });
       
       if (!res.ok) {
@@ -274,6 +274,11 @@ export default function Home() {
       fetchData();
     }
   };
+
+  const handleSearch = (queries: string[], options: { jobsPerQuery: number }) =>
+    runScanStream({ queries, maxAgeDays: 7, jobsPerQuery: options.jobsPerQuery });
+  const handleResetAndRescan = (queries: string[], options: { jobsPerQuery: number }) =>
+    runScanStream({ queries, maxAgeDays: 7, reset: true, jobsPerQuery: options.jobsPerQuery });
 
   return (
     <main className="min-h-screen bg-[#f8fafc] dark:bg-[#020617] text-slate-900 dark:text-slate-50 pb-20">
@@ -358,7 +363,7 @@ export default function Home() {
                   />
                 ) : (
                   <div className="space-y-6">
-                    <JobSearch onSearchStarted={handleSearch} isLoading={isLoading} profile={profile} />
+                    <JobSearch onSearchStarted={handleSearch} onResetAndRescan={handleResetAndRescan} isLoading={isLoading} profile={profile} />
                     {(isLoading || scanLogs.length > 0) && (
                       <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                         <ScanTerminal logs={scanLogs} isComplete={isScanComplete} />

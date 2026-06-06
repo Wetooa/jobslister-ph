@@ -5,8 +5,17 @@ import { Job, Analysis } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
-import { ExternalLink, CheckCircle2, XCircle, AlertCircle, X, Bookmark, BookmarkCheck, CheckSquare, Square, Trash2, EyeOff, MapPin, CircleDollarSign, Pin, UserMinus, Eye } from 'lucide-react';
+import { ExternalLink, CheckCircle2, XCircle, AlertCircle, X, Bookmark, BookmarkCheck, CheckSquare, Square, Trash2, EyeOff, MapPin, CircleDollarSign, Pin, UserMinus, Eye, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import {
+  RECENCY_FILTER_OPTIONS,
+  RecencyFilterKey,
+  formatPostedLabel,
+  getJobAgeDays,
+  getRecencyColorClass,
+  getRecencySortValue,
+  passesRecencyFilter,
+} from '@/lib/job-recency';
 
 interface JobListProps {
   jobs: Job[];
@@ -24,6 +33,7 @@ export function JobList({ jobs, analysis }: JobListProps) {
   const [hideApplied, setHideApplied] = useState(false);
   const [showBlacklisted, setShowBlacklisted] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [recencyFilter, setRecencyFilter] = useState<RecencyFilterKey>('7d');
 
   type JobWithMatch = Job & { match?: Analysis };
   const [selectedJob, setSelectedJob] = useState<JobWithMatch | null>(null);
@@ -89,12 +99,16 @@ export function JobList({ jobs, analysis }: JobListProps) {
         tagMatch = selectedTags.some(tag => (job.tags || []).includes(tag));
       }
 
-      return typeMatch && statusMatch && skillMatch && tagMatch;
+      const recencyOption = RECENCY_FILTER_OPTIONS.find(o => o.key === recencyFilter);
+      const recencyMatch = passesRecencyFilter(job, recencyOption?.maxDays ?? null);
+
+      return typeMatch && statusMatch && skillMatch && tagMatch && recencyMatch;
     });
 
   const sortedJobs = filteredJobs.sort((a, b) => {
     if (sortBy === 'match_desc') return (b.match?.matchScore || 0) - (a.match?.matchScore || 0);
     if (sortBy === 'match_asc') return (a.match?.matchScore || 0) - (b.match?.matchScore || 0);
+    if (sortBy === 'posted_desc') return getRecencySortValue(b) - getRecencySortValue(a);
     return 0;
   });
 
@@ -130,8 +144,25 @@ export function JobList({ jobs, analysis }: JobListProps) {
             >
               <option value="match_desc">Match Score (High to Low)</option>
               <option value="match_asc">Match Score (Low to High)</option>
+              <option value="posted_desc">Most Recent</option>
             </select>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <span className="text-sm font-medium text-slate-500">Posted:</span>
+          {RECENCY_FILTER_OPTIONS.map(option => (
+            <label key={option.key} className="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700 dark:text-slate-300">
+              <input
+                type="radio"
+                name="recencyFilter"
+                checked={recencyFilter === option.key}
+                onChange={() => setRecencyFilter(option.key)}
+                className="border-slate-300 text-primary focus:ring-primary"
+              />
+              {option.label}
+            </label>
+          ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -234,6 +265,10 @@ export function JobList({ jobs, analysis }: JobListProps) {
             </CardHeader>
             <CardContent className="flex-1 space-y-4">
               <div className="space-y-1 text-xs text-muted-foreground">
+                <p className={`flex items-center gap-1.5 font-medium ${getRecencyColorClass(getJobAgeDays(job))}`}>
+                  <Clock className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                  {formatPostedLabel(job)}
+                </p>
                 <p className="flex items-center gap-1.5">
                   <MapPin className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
                   {job.typeOfWork || 'N/A'}
@@ -316,6 +351,10 @@ export function JobList({ jobs, analysis }: JobListProps) {
                     {selectedJob.title}
                   </h2>
                   <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-slate-600 dark:text-slate-400">
+                    <span className={`flex items-center gap-1.5 font-medium ${getRecencyColorClass(getJobAgeDays(selectedJob))}`}>
+                      <Clock className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      {formatPostedLabel(selectedJob)}
+                    </span>
                     <span className="flex items-center gap-1.5">
                       <MapPin className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
                       {selectedJob.typeOfWork || 'N/A'}

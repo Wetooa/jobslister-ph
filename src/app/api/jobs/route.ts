@@ -3,6 +3,18 @@ import { Storage, dedupeJobsByLink, normalizeJobLink } from '@/lib/storage';
 import { JobScraper } from '@/lib/scraper';
 import { LLMClient } from '@/lib/llm';
 import { Job, Analysis, Profile } from '@/lib/types';
+import {
+  BATCH_LIMIT,
+  DEFAULT_JOBS_PER_QUERY,
+  DEFAULT_MAX_AGE_DAYS,
+  blendMatchScore,
+  clampJobsPerQuery,
+  computeRecencyScore,
+  formatPostedContext,
+  getJobAgeDays,
+  getRecencySortValue,
+  passesRecencyFilter,
+} from '@/lib/job-recency';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,14 +26,28 @@ export async function GET() {
 
 import { scanEmitter } from '@/lib/events';
 
+export type ScanOptions = {
+  maxAgeDays?: number;
+  reset?: boolean;
+  jobsPerQuery?: number;
+};
+
 // Background scan worker
-async function runBackgroundScan(queries: string[], profile: Profile) {
+async function runBackgroundScan(queries: string[], profile: Profile, options: ScanOptions = {}) {
   const sendLog = (msg: string) => scanEmitter.emit('log', msg);
   const sendError = (msg: string) => scanEmitter.emit('error', msg);
+  const maxAgeDays = options.maxAgeDays ?? DEFAULT_MAX_AGE_DAYS;
+  const jobsPerQuery = clampJobsPerQuery(options.jobsPerQuery ?? DEFAULT_JOBS_PER_QUERY);
 
   const scraper = new JobScraper();
   try {
-    sendLog(`**Initialization complete.** Starting background scanner for queries: [${queries.join(', ')}]`);
+    if (options.reset) {
+      Storage.clearJobs();
+      Storage.clearAnalysis();
+      sendLog(`[System] Cleared all jobs and analysis cache for fresh scan.`);
+    }
+
+    sendLog(`**Initialization complete.** Starting background scanner for queries: [${queries.join(', ')}] (max age: ${maxAgeDays} days, up to ${jobsPerQuery} jobs per keyword)`);
     const llm = new LLMClient();
 
     const dedupeResult = dedupeJobsByLink(Storage.getJobs());
@@ -48,11 +74,18 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
     // 1. Search and Scrape
     for (const query of queries) {
       sendLog(`[Search] Querying OnlineJobs.ph for keyword: **"${query}"**`);
-      const searchResults = await scraper.searchJobs(query);
-      sendLog(`[Search] Found ${searchResults.length} initial matching results for **"${query}"**`);
+      const searchResults = await scraper.searchJobs(query, jobsPerQuery);
+      sendLog(`[Search] Found ${searchResults.length} recent results (top ${jobsPerQuery} by date) for **"${query}"**`);
 
       for (let i = 0; i < searchResults.length; i++) {
         const res = searchResults[i];
+
+        if (!passesRecencyFilter(res, maxAgeDays)) {
+          const ageDays = getJobAgeDays(res);
+          sendLog(`[Recency] Skipping stale job **"${res.title}"** (${ageDays ?? 'unknown'} days old, max ${maxAgeDays})`);
+          continue;
+        }
+
         const normalizedLink = normalizeJobLink(res.link);
         const existingJob = jobCache.find(j => normalizeJobLink(j.link) === normalizedLink);
 
@@ -64,6 +97,10 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
             existingJob.tags.push(query);
             shouldSave = true;
           }
+          if (res.postedAt && !existingJob.postedAt) {
+            existingJob.postedAt = res.postedAt;
+            shouldSave = true;
+          }
         }
 
         if (!existingJob || (!existingJob.description && !existingJob.scrapeError)) {
@@ -73,6 +110,7 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
             if (details) {
               if (existingJob) {
                 Object.assign(existingJob, details);
+                if (res.postedAt) existingJob.postedAt = res.postedAt;
               } else {
                 jobCache.push({ ...res, ...details, link: normalizedLink, tags: [query] } as Job);
               }
@@ -97,6 +135,7 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
     const seenLinks = new Set<string>();
     const unanalyzedJobs = jobCache.filter((job) => {
       if (!job.description || job.isClosed) return false;
+      if (!passesRecencyFilter(job, maxAgeDays)) return false;
       const normalizedLink = normalizeJobLink(job.link);
       if (seenLinks.has(normalizedLink)) return false;
       seenLinks.add(normalizedLink);
@@ -113,9 +152,13 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
       return score;
     };
 
-    unanalyzedJobs.sort((a, b) => getPreScore(b, profile) - getPreScore(a, profile));
-    const BATCH_LIMIT = 500;
-    const jobsToAnalyze = unanalyzedJobs.slice(0, BATCH_LIMIT);
+    unanalyzedJobs.sort((a, b) => {
+      const recencyDiff = getRecencySortValue(b) - getRecencySortValue(a);
+      if (recencyDiff !== 0) return recencyDiff;
+      return getPreScore(b, profile) - getPreScore(a, profile);
+    });
+    const analysisBatchCap = Math.min(BATCH_LIMIT, queries.length * jobsPerQuery);
+    const jobsToAnalyze = unanalyzedJobs.slice(0, analysisBatchCap);
 
     if (jobsToAnalyze.length > 0) {
       sendLog(`[Heuristics] Isolated top ${jobsToAnalyze.length} jobs for deep **AI Analysis**.`);
@@ -133,20 +176,34 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
         batch.map(async (job) => {
           try {
             sendLog(`[AI Agent] Analyzing: **${job.title}**`);
-            const context = `Job Title: ${job.title}\nType: ${job.typeOfWork}\nSalary: ${job.salary}\nSkills: ${job.skills}\nDescription: ${job.description}`;
+            const postedContext = formatPostedContext(job);
+            const context = `Job Title: ${job.title}\nType: ${job.typeOfWork}\nSalary: ${job.salary}\nSkills: ${job.skills}\n${postedContext}\nDescription: ${job.description}`;
             const comparison = await llm.compareJob(profile, context);
 
             if ('matchScore' in comparison || 'match_score' in comparison) {
-              const score = (comparison as any).matchScore ?? (comparison as any).match_score ?? 0;
+              const rawScore = (comparison as any).matchScore ?? (comparison as any).match_score ?? 0;
+              const ageDays = getJobAgeDays(job) ?? 999;
+              const recencyScore = computeRecencyScore(ageDays);
+              const blendedScore = blendMatchScore(rawScore, recencyScore);
+
               const normalized: Analysis = {
-                matchScore: score,
+                matchScore: blendedScore,
+                rawMatchScore: rawScore,
+                recencyScore,
                 pros: Array.isArray((comparison as any).pros) ? (comparison as any).pros : [],
                 cons: Array.isArray((comparison as any).cons) ? (comparison as any).cons : [],
                 recommendation: (comparison as any).recommendation || 'Skip',
                 reasoning: (comparison as any).reasoning || (comparison as any).reason || 'No reasoning provided.'
               };
+
+              const jobIndex = jobCache.findIndex(j => normalizeJobLink(j.link) === normalizeJobLink(job.link));
+              if (jobIndex !== -1) {
+                jobCache[jobIndex].recencyScore = recencyScore;
+                Storage.saveJobs(jobCache);
+              }
+
               analysisCache[normalizeJobLink(job.link)] = normalized;
-              sendLog(`[AI Agent] Rated **${job.title}**: ${normalized.matchScore}% Match`);
+              sendLog(`[AI Agent] Rated **${job.title}**: ${normalized.matchScore}% Match (skill: ${rawScore}%, recency: ${recencyScore}%)`);
             } else {
               let errorMsg = (comparison as any).error;
               if (!errorMsg) {
@@ -174,13 +231,11 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
             sendLog(`[AI Agent] Analysis failed for **${job.title}**: ${errorMsg}`);
           }
 
-          // Save after EACH job completes so one failure never aborts the rest of the queue
           Storage.saveAnalysis(analysisCache);
           scanEmitter.emit('analysisAdded');
         })
       );
 
-      // Polite delay between batches instead of jobs
       if (i + CONCURRENCY < jobsToAnalyze.length) {
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
@@ -199,15 +254,14 @@ async function runBackgroundScan(queries: string[], profile: Profile) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { queries } = await req.json();
+    const { queries, maxAgeDays, reset, jobsPerQuery } = await req.json();
     const profile = Storage.getProfile();
 
     if (!profile) {
       return NextResponse.json({ error: 'No profile found. Please upload a CV first.' }, { status: 400 });
     }
 
-    // Start background task without awaiting it
-    runBackgroundScan(queries, profile as Profile).catch(console.error);
+    runBackgroundScan(queries ?? [], profile as Profile, { maxAgeDays, reset, jobsPerQuery }).catch(console.error);
 
     return NextResponse.json({ success: true, message: 'Scan started in background' });
   } catch (error: any) {
@@ -243,7 +297,6 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    // Update partial fields
     if (isSaved !== undefined) jobCache[jobIndex].isSaved = isSaved;
     if (hasApplied !== undefined) jobCache[jobIndex].hasApplied = hasApplied;
     if (isClosed !== undefined) jobCache[jobIndex].isClosed = isClosed;

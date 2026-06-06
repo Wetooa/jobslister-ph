@@ -40,6 +40,8 @@ vi.mock('@/lib/storage', async () => {
       getAnalysis: vi.fn(),
       saveJobs: vi.fn(),
       saveAnalysis: vi.fn(),
+      clearJobs: vi.fn(),
+      clearAnalysis: vi.fn(),
     },
   };
 });
@@ -49,6 +51,8 @@ const mockGetJobs = vi.mocked(Storage.getJobs);
 const mockGetAnalysis = vi.mocked(Storage.getAnalysis);
 const mockSaveJobs = vi.mocked(Storage.saveJobs);
 const mockSaveAnalysis = vi.mocked(Storage.saveAnalysis);
+const mockClearJobs = vi.mocked(Storage.clearJobs);
+const mockClearAnalysis = vi.mocked(Storage.clearAnalysis);
 
 describe('/api/jobs route', () => {
   beforeEach(() => {
@@ -71,8 +75,8 @@ describe('/api/jobs route', () => {
       skills: 'React',
     });
     mockSearchJobs.mockResolvedValue([
-      { title: 'Analyzed', link: 'https://x.com/analyzed/' },
-      { title: 'New Job', link: 'https://x.com/new-job/' },
+      { title: 'Analyzed', link: 'https://x.com/analyzed/', postedAt: '2026-06-06T10:00:00.000Z' },
+      { title: 'New Job', link: 'https://x.com/new-job/', postedAt: '2026-06-05T10:00:00.000Z' },
     ]);
     mockCompareJob.mockResolvedValue({
       matchScore: 81,
@@ -112,6 +116,60 @@ describe('/api/jobs route', () => {
     const comparedContext = String(mockCompareJob.mock.calls[0][1]);
     expect(comparedContext).toContain('New Job');
     expect(comparedContext).not.toContain('Analyzed');
+  });
+
+  it('clears cache when reset is true', async () => {
+    mockGetJobs.mockReturnValue([]);
+
+    const req = new NextRequest('http://localhost/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ queries: ['react'], reset: true, maxAgeDays: 7 }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockClearJobs).toHaveBeenCalled();
+    expect(mockClearAnalysis).toHaveBeenCalled();
+  });
+
+  it('passes jobsPerQuery to searchJobs', async () => {
+    mockGetJobs.mockReturnValue([]);
+
+    const req = new NextRequest('http://localhost/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ queries: ['react'], jobsPerQuery: 5 }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockSearchJobs).toHaveBeenCalledWith('react', 5);
+  });
+
+  it('skips stale jobs beyond maxAgeDays during scan', async () => {
+    mockGetJobs.mockReturnValue([]);
+    mockSearchJobs.mockResolvedValue([
+      { title: 'Fresh', link: 'https://x.com/fresh', postedAt: '2026-06-06T10:00:00.000Z' },
+      { title: 'Stale', link: 'https://x.com/stale', postedAt: '2026-05-20T10:00:00.000Z' },
+    ]);
+
+    const req = new NextRequest('http://localhost/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ queries: ['react'], maxAgeDays: 7 }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockGetJobDetails).toHaveBeenCalledTimes(1);
+    expect(String(mockGetJobDetails.mock.calls[0][0])).toContain('fresh');
   });
 
   it('dedupes existing jobs on PATCH action dedupe and returns stats', async () => {

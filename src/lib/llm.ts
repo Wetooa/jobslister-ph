@@ -118,7 +118,14 @@ Extracted JSON:`;
   }
 
   async compareJob(profile: Profile, jobContext: string): Promise<Analysis | { error: string; raw: string }> {
-    const systemMessage = `You are a recruitment specialist. You will compare a user's profile with a job description and determine if it's a good fit. 
+    const systemMessage = `You are a recruitment specialist. You will compare a user's profile with a job description and determine if it's a good fit.
+
+IMPORTANT — Job recency rules:
+- Jobs posted within the last 3 days are highly preferred and should score higher when skills match.
+- Jobs posted 4–6 days ago are acceptable but note they may already have many applicants.
+- Jobs posted 7+ days ago are likely expired or already filled — recommend "Skip" unless the fit is exceptional.
+- Always mention posting recency in your reasoning.
+
 Output MUST be a JSON object with the following schema:
 {
   "matchScore": number (0-100),
@@ -134,11 +141,11 @@ Job Description:
 ${jobContext}
 
 Compare them and provide:
-1. Match Score (0-100)
+1. Match Score (0-100) — factor in both skill fit AND posting recency
 2. Pros
 3. Cons
 4. Recommendation (Apply/Skip)
-5. Reasoning (Concise)
+5. Reasoning (Concise, must mention recency)
 
 Output strictly in JSON.`;
 

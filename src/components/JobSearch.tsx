@@ -8,15 +8,24 @@ import { Badge } from '@/components/ui/badge';
 import { Search, Plus, X, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Profile } from '@/lib/types';
+import {
+  JOBS_PER_QUERY_PRESETS,
+  getJobsPerQuery,
+  setJobsPerQuery,
+} from '@/lib/scan-preferences';
+
+export type ScanStartOptions = { jobsPerQuery: number };
 
 interface JobSearchProps {
-  onSearchStarted: (queries: string[]) => void;
+  onSearchStarted: (queries: string[], options: ScanStartOptions) => void;
+  onResetAndRescan?: (queries: string[], options: ScanStartOptions) => void;
   isLoading: boolean;
   profile?: Profile;
 }
 
-export function JobSearch({ onSearchStarted, isLoading, profile }: JobSearchProps) {
+export function JobSearch({ onSearchStarted, onResetAndRescan, isLoading, profile }: JobSearchProps) {
   const [query, setQuery] = useState('');
+  const [jobsPerQuery, setJobsPerQueryState] = useState(() => getJobsPerQuery());
   
   const [queries, setQueries] = useState<string[]>(() => {
     if (profile && profile.skills) {
@@ -60,7 +69,13 @@ export function JobSearch({ onSearchStarted, isLoading, profile }: JobSearchProp
       toast.error('Add at least one search query');
       return;
     }
-    onSearchStarted(queries);
+    onSearchStarted(queries, { jobsPerQuery });
+  };
+
+  const handleJobsPerQueryChange = (value: string) => {
+    const next = Number.parseInt(value, 10);
+    setJobsPerQueryState(next);
+    setJobsPerQuery(next);
   };
 
   return (
@@ -106,23 +121,62 @@ export function JobSearch({ onSearchStarted, isLoading, profile }: JobSearchProp
           ))}
         </div>
 
-        <Button 
-          onClick={handleSearch} 
-          disabled={isLoading || queries.length === 0}
-          className="h-12 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 font-bold shadow-md transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98]"
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Searching & Analyzing...
-            </>
-          ) : (
-            <>
-              <Sparkles className="mr-2 h-5 w-5" />
-              Start Automated Scan
-            </>
+        <div className="flex items-center gap-3">
+          <label htmlFor="jobs-per-query" className="text-sm font-medium text-slate-500 whitespace-nowrap">
+            Jobs per keyword:
+          </label>
+          <select
+            id="jobs-per-query"
+            value={jobsPerQuery}
+            onChange={(e) => handleJobsPerQueryChange(e.target.value)}
+            disabled={isLoading}
+            className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+          >
+            {JOBS_PER_QUERY_PRESETS.map((preset) => (
+              <option key={preset.value} value={preset.value}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Button 
+            onClick={handleSearch} 
+            disabled={isLoading || queries.length === 0}
+            className="h-12 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 font-bold shadow-md transition-all hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98]"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Searching & Analyzing...
+              </>
+            ) : (
+              <>
+                <Sparkles className="mr-2 h-5 w-5" />
+                Start Automated Scan
+              </>
+            )}
+          </Button>
+          {onResetAndRescan && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (queries.length === 0) {
+                  toast.error('Add at least one search query');
+                  return;
+                }
+                if (confirm(`This will delete ALL jobs and AI analysis, then fetch fresh listings (${jobsPerQuery} per keyword, max 7 days old). Continue?`)) {
+                  onResetAndRescan(queries, { jobsPerQuery });
+                }
+              }}
+              disabled={isLoading || queries.length === 0}
+              className="h-10 w-full rounded-xl border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
+            >
+              Reset & Rescan (Fresh Start)
+            </Button>
           )}
-        </Button>
+        </div>
       </CardContent>
     </Card>
   );

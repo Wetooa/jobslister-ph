@@ -1,7 +1,10 @@
 import { chromium, Browser, Page } from 'playwright';
 import { Job } from './types';
 import { scanEmitter } from './events';
+import { DEFAULT_JOBS_PER_QUERY, clampJobsPerQuery, parsePostedAt } from './job-recency';
 import path from 'path';
+
+export type JobSearchResult = Pick<Job, 'title' | 'link' | 'postedAt'>;
 
 export class JobScraper {
   private baseUrl: string = 'https://www.onlinejobs.ph';
@@ -20,7 +23,7 @@ export class JobScraper {
     }
   }
 
-  async searchJobs(query: string): Promise<Job[]> {
+  async searchJobs(query: string, limit = DEFAULT_JOBS_PER_QUERY): Promise<JobSearchResult[]> {
     await this.init();
     const page: Page = await this.browser!.newPage();
     
@@ -30,22 +33,42 @@ export class JobScraper {
 
       const jobs = await page.evaluate(() => {
         const jobNodes = document.querySelectorAll('.jobpost-cat-box');
-        const results: { title: string; link: string }[] = [];
+        const results: { title: string; link: string; postedAtRaw: string | null }[] = [];
         
         jobNodes.forEach(node => {
           const titleNode = node.querySelector('h4');
           const linkNode = node.querySelector('a') as HTMLAnchorElement;
           if (titleNode && linkNode) {
+            const dateNode = node.querySelector('p[data-temp]');
+            const dataTemp = dateNode?.getAttribute('data-temp') ?? null;
+            const emText = dateNode?.querySelector('em')?.textContent?.trim() ?? null;
             results.push({
               title: titleNode.innerText.trim(),
-              link: linkNode.href
+              link: linkNode.href,
+              postedAtRaw: dataTemp || emText,
             });
           }
         });
         return results;
       });
 
-      return jobs;
+      const withDates: JobSearchResult[] = jobs
+        .map((job) => {
+          const parsed = job.postedAtRaw ? parsePostedAt(job.postedAtRaw) : null;
+          return {
+            title: job.title,
+            link: job.link,
+            postedAt: parsed ?? undefined,
+          };
+        })
+        .sort((a, b) => {
+          const aTs = a.postedAt ? new Date(a.postedAt).getTime() : 0;
+          const bTs = b.postedAt ? new Date(b.postedAt).getTime() : 0;
+          return bTs - aTs;
+        })
+        .slice(0, clampJobsPerQuery(limit));
+
+      return withDates;
     } catch (error: any) {
       console.error('Error during search:', error.message);
       return [];

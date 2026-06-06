@@ -53,6 +53,7 @@ export function dedupeJobsByLink(jobs: Job[]): DedupeJobsResult {
       'description',
       'skills',
       'scrapeError',
+      'postedAt',
     ];
     for (const field of textFields) {
       const currentValue = current[field];
@@ -70,6 +71,10 @@ export function dedupeJobsByLink(jobs: Job[]): DedupeJobsResult {
     const tags = new Set<string>([...(merged.tags ?? []), ...(current.tags ?? [])]);
     if (tags.size > 0) {
       merged.tags = [...tags];
+    }
+
+    if (current.recencyScore !== undefined) {
+      merged.recencyScore = Math.max(merged.recencyScore ?? 0, current.recencyScore);
     }
 
     mergedByLink.set(normalizedLink, merged);
@@ -108,5 +113,11 @@ export const Storage = {
   },
   saveProfile: (profile: Profile) => {
     fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2));
-  }
+  },
+  clearJobs: () => {
+    fs.writeFileSync(JOBS_PATH, JSON.stringify([], null, 2));
+  },
+  clearAnalysis: () => {
+    fs.writeFileSync(ANALYSIS_PATH, JSON.stringify({}, null, 2));
+  },
 };
